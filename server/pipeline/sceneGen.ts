@@ -28,7 +28,7 @@ p { font-size: 20px; line-height: 1.6; max-width: 700px; text-align: center; col
 
 async function callClaude(prompt: string): Promise<string> {
   const response = await client.messages.create({
-    model: 'claude-opus-4-5',
+    model: process.env.ANTHROPIC_MODEL || 'claude-opus-4-8',
     max_tokens: 8192,
     messages: [{ role: 'user', content: prompt }],
   })
@@ -156,6 +156,8 @@ BOUNDARY RULES (critical — this is why we use templates):
 * Do NOT use position:absolute to escape a zone. Absolutely-positioned children are fine ONLY relative to their zone (zones are position:relative) and must stay within it.
 * Headings/labels go in .header/.side/.caption. The main animated diagram goes in .visual/.stage/.track/.left/.right/.cell. Keep them separate — text must not overlap the diagram.
 * Reserve generous bottom margin in caption zones; the lesson player overlays a controls bar near the bottom of the screen, so keep essential content away from the extreme bottom edge.
+* SPACING: always leave breathing room (at least var(--gap)) between a piece of text and any element it relates to — never let a label touch or crowd its visual, and never let two text blocks butt up against each other.
+* NOTHING may cross a boundary: text, shapes, and SVG elements must stay fully inside their zone. If content feels tight, make it SMALLER or show LESS — do not let it spill, clip awkwardly, or run to the very edge.
 
 === STEP 3: TECHNICAL REQUIREMENTS ===
 * Full HTML document with <!DOCTYPE html>, <html>, <head>, <body>
@@ -166,10 +168,12 @@ BOUNDARY RULES (critical — this is why we use templates):
 
 === STEP 4: CONTENT & MOTION ===
 * The visual must ILLUSTRATE the concept, not just restate the narration text.
-* Show don't tell: narrating light scattering → animate actual light rays. Use SVG for diagrams, geometry, and illustrations.
+* Show don't tell: narrating light scattering → animate actual light rays. Use simple SVG shapes for diagrams and illustrations.
+* KEEP VISUALS SIMPLE: use clean, basic shapes — circles, rectangles, lines, arrows, simple icons, flowing particles. Do NOT draw complicated or detailed illustrations, intricate diagrams, charts, axis graphs, or data plots. A few clear elements in motion beats a busy, complex scene.
+* IMPORTANT TEXT IN THE MAIN AREA: when key terms, labels, or takeaways appear inside the main content/visual zone (.visual/.stage/.left/.right/.cell/.track), place them inside a themed color container — a rounded panel/pill (use var(--radius)) with a subtle tinted background drawn from the accent palette (e.g. a low-opacity var(--accent)/var(--accent-2)/var(--accent-3) fill and matching border). Do NOT do this to the top/header title or the main scene headline — those stay as plain styled text; only the supporting/important text within the main area gets a container.
 * Text labels ANNOTATE the visual; they don't replace it. Headline text uses var(--fs-title)/var(--fs-hero); supporting text uses var(--fs-body)/var(--fs-label).
 * Every scene must have motion — nothing static. Smooth, purposeful enter/transform/exit.
-* Style: cinematic educational — 3Blue1Brown meets clean motion graphics.
+* Style: cinematic educational — clean, minimal motion graphics.
 
 Technique by subject: physics/science → particles, waves, SVG geometry with CSS transforms; data structures → animated SVG nodes inserting/moving; geography/civics → schematic SVG layouts with highlights; abstract ideas → metaphorical motion (flowing particles, growing forms).
 

@@ -37,7 +37,7 @@ Rules:
   while (attempt < 2) {
     try {
       const response = await client.messages.create({
-        model: 'claude-opus-4-5',
+        model: process.env.ANTHROPIC_MODEL || 'claude-opus-4-8',
         max_tokens: 4096,
         messages: [{ role: 'user', content: prompt }],
       })

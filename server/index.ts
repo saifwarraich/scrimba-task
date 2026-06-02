@@ -3,7 +3,6 @@ import cors from '@fastify/cors'
 import { generateScript } from './pipeline/scriptGen.js'
 import { generateAllScenes } from './pipeline/sceneGen.js'
 import { generateAudio } from './pipeline/tts.js'
-import { getCachedLesson, saveCachedLesson } from './pipeline/lessonCache.js'
 import type { ScriptScene } from './pipeline/scriptGen.js'
 
 interface GeneratedScene {
@@ -45,24 +44,6 @@ async function runPipeline(lessonId: string, query: string) {
   const lesson = lessons.get(lessonId)!
 
   try {
-    const cached = await getCachedLesson(query)
-    if (cached) {
-      lesson.script = cached.script
-      pushSSE(lesson, 'script_ready', { totalScenes: cached.script.length, scenes: cached.script })
-      for (const scene of cached.scenes) {
-        lesson.scenes.push(scene)
-        pushSSE(lesson, 'scene_ready', scene)
-        await new Promise(r => setTimeout(r, 80))
-      }
-      lesson.status = 'done'
-      const totalDuration = cached.scenes.reduce((s, sc) => s + sc.durationSeconds, 0)
-      pushSSE(lesson, 'done', { totalDuration })
-      for (const client of lesson.sseClients) {
-        if (!client.closed) { try { client.reply.raw.end() } catch {} }
-      }
-      return
-    }
-
     const script = await generateScript(query)
     lesson.script = script
 
@@ -86,9 +67,6 @@ async function runPipeline(lessonId: string, query: string) {
     lesson.status = 'done'
     const totalDuration = lesson.scenes.reduce((sum, s) => sum + s.durationSeconds, 0)
     pushSSE(lesson, 'done', { totalDuration })
-
-    // Persist this run (scenes + audio) so the same query replays instantly next time.
-    await saveCachedLesson(query, { script, scenes: lesson.scenes })
   } catch (err) {
     console.error('Pipeline error:', err)
     lesson.status = 'error'
