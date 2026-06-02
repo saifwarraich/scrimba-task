@@ -36,6 +36,74 @@ async function callClaude(prompt: string): Promise<string> {
   return text.replace(/^```html\s*/i, '').replace(/```\s*$/, '').trim()
 }
 
+// Shared design tokens — pasted verbatim into every scene so the whole lesson
+// looks like one cohesive piece. Claude MUST keep this :root block as-is.
+const DESIGN_TOKENS = `:root {
+  /* Surfaces */
+  --bg: #0d1117;
+  --bg-grad: radial-gradient(circle at 50% 30%, #161b22 0%, #0d1117 70%);
+  --panel: rgba(255, 255, 255, 0.03);
+  --stroke: rgba(255, 255, 255, 0.08);
+
+  /* Palette — pick accents from THESE; do not invent new hex values */
+  --accent: #6c4ff6;        /* primary  */
+  --accent-2: #4cc9f0;      /* cool secondary */
+  --accent-3: #f5a623;      /* warm highlight */
+  --good: #3fb950;
+  --bad: #f85149;
+
+  /* Text */
+  --text: #e6edf3;
+  --text-dim: #8b949e;
+
+  /* Type scale (do not exceed --fs-hero for any text) */
+  --fs-hero: 64px;
+  --fs-title: 40px;
+  --fs-label: 22px;
+  --fs-body: 18px;
+  --fs-tag: 13px;
+
+  /* Rhythm */
+  --pad: 40px;
+  --gap: 20px;
+  --radius: 14px;
+
+  --font: 'Inter', system-ui, -apple-system, sans-serif;
+}`
+
+// Each template is a CSS Grid skeleton with named areas. Claude picks ONE,
+// declares it on <body data-template>, and fills the named zones. Every zone
+// has overflow:hidden so nothing can bleed across boundaries.
+const TEMPLATES = `TEMPLATE "diagram-focus" — one hero visual, label above, caption below.
+   Best for: a single concept, mechanism, process, or object to study closely.
+   body { display:grid; grid-template-rows: 14% 1fr 18%;
+          grid-template-areas: "header" "visual" "caption"; }
+   Zones: .header (grid-area:header), .visual (grid-area:visual), .caption (grid-area:caption)
+
+TEMPLATE "split-explain" — visual on the left, text explanation on the right.
+   Best for: a concept paired with a definition, list of properties, or steps.
+   body { display:grid; grid-template-columns: 58% 42%;
+          grid-template-areas: "visual side"; }
+   Zones: .visual (grid-area:visual), .side (grid-area:side)
+
+TEMPLATE "title-reveal" — full-bleed centered statement over an animated backdrop.
+   Best for: opening/closing scenes, a single big idea, a key term or number.
+   body { display:grid; place-items:center; grid-template-areas: "stage"; }
+   Zones: .stage (grid-area:stage) holds animated bg + centered headline
+
+TEMPLATE "timeline" — header on top, a horizontal sequence of steps in the middle.
+   Best for: ordered sequences, stages, history, cause→effect chains.
+   body { display:grid; grid-template-rows: 16% 1fr 16%;
+          grid-template-areas: "header" "track" "caption"; }
+   .track is display:flex; align-items:center; justify-content:space-between;
+   Zones: .header, .track (the steps), .caption
+
+TEMPLATE "comparison" — header on top, two equal columns, caption at the bottom.
+   Best for: A vs B, before/after, two contrasting ideas.
+   body { display:grid; grid-template-rows: 16% 1fr 16%; grid-template-columns: 1fr 1fr;
+          grid-template-areas: "header header" "left right" "caption caption"; }
+   Zones: .header, .left, .right, .caption`
+
 function buildPrompt(query: string, scene: ScriptScene, total: number): string {
   return `You are generating one animated scene for an educational lesson player. The scene renders full-screen in a browser (1280×720 viewport).
 
@@ -47,35 +115,52 @@ Duration: ${scene.durationSeconds} seconds
 
 Generate a single complete HTML document for this scene.
 
-TECHNICAL REQUIREMENTS:
+=== STEP 1: CHOOSE A LAYOUT TEMPLATE ===
+Look at the scene's content and visual brief, then pick the ONE template that best
+guides the viewer's attention and presents the information clearly:
+
+${TEMPLATES}
+
+Declare your choice on the body: <body data-template="diagram-focus"> (etc.).
+Use ITS grid definition exactly. Place every piece of content inside one of that
+template's named zones — never put content directly on <body>.
+
+=== STEP 2: USE THE SHARED DESIGN SYSTEM ===
+Copy this :root block verbatim into your <style> and build everything from these
+tokens (var(--accent), var(--fs-title), etc.). This keeps all scenes consistent:
+
+${DESIGN_TOKENS}
+
+Then add this required boilerplate so zones never overflow their boundaries:
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100vw; height:100vh; overflow:hidden; }
+body { background: var(--bg-grad); color: var(--text); font-family: var(--font); }
+/* EVERY grid zone must clip its own contents: */
+.header, .visual, .caption, .side, .stage, .track, .left, .right {
+  overflow: hidden; position: relative; padding: var(--pad);
+}
+
+BOUNDARY RULES (critical — this is why we use templates):
+* All visuals and text live INSIDE a grid zone. Nothing is a direct child of <body> except the zone elements.
+* SVGs must scale to their zone: <svg width="100%" height="100%" viewBox="..." preserveAspectRatio="xMidYMid meet">. Never give an SVG a fixed pixel size larger than its zone.
+* Do NOT use position:absolute to escape a zone. Absolutely-positioned children are fine ONLY relative to their zone (zones are position:relative) and must stay within it.
+* Headings/labels go in .header/.side/.caption. The main animated diagram goes in .visual/.stage/.track/.left/.right. Keep them separate — text must not overlap the diagram.
+
+=== STEP 3: TECHNICAL REQUIREMENTS ===
 * Full HTML document with <!DOCTYPE html>, <html>, <head>, <body>
-* All styles inline in <style> tag in <head>
-* All JavaScript inline in <script> tag before </body>
-* GSAP is NOT available — use only CSS animations and vanilla JS
-* No external resources, no images, no fonts (use system fonts)
-* Body should be exactly: width 100vw, height 100vh, overflow hidden
-* All animations should START automatically on page load
-* Animations should loop or complete gracefully within ${scene.durationSeconds} seconds
+* All styles inline in a <style> tag in <head>; all JS inline in a <script> before </body>
+* GSAP is NOT available — only CSS @keyframes and vanilla JS (setTimeout, requestAnimationFrame)
+* No external resources, no images, no remote fonts
+* All animations START automatically on load; loop or settle gracefully within ${scene.durationSeconds}s
 
-AESTHETIC REQUIREMENTS:
-* Background: dark, use #0d1117 or a dark gradient appropriate to the topic
-* Color palette: pick 2-3 colors that suit the subject matter. For science: blues, teals. For CS/data: purples, greens. For civics: golds, blues.
-* Typography: large, bold, clear. Use system-ui font. Key terms in large text (48-72px). Supporting text 18-24px.
-* Animations: smooth, purposeful. Things should enter, transform, and exit cleanly. Use CSS @keyframes for continuous animations, JS setTimeout/requestAnimationFrame for sequenced reveals.
-* Style: cinematic educational. Think 3Blue1Brown meets motion graphics. Clean shapes, bold colors, satisfying animations.
+=== STEP 4: CONTENT & MOTION ===
+* The visual must ILLUSTRATE the concept, not just restate the narration text.
+* Show don't tell: narrating light scattering → animate actual light rays. Use SVG for diagrams, geometry, and illustrations.
+* Text labels ANNOTATE the visual; they don't replace it. Headline text uses var(--fs-title)/var(--fs-hero); supporting text uses var(--fs-body)/var(--fs-label).
+* Every scene must have motion — nothing static. Smooth, purposeful enter/transform/exit.
+* Style: cinematic educational — 3Blue1Brown meets clean motion graphics.
 
-CONTENT REQUIREMENTS:
-* The visual must ILLUSTRATE the concept, not just display the narration text
-* Show don't tell: if narrating about light scattering, animate actual light rays
-* Use SVG for diagrams, geometric shapes, and illustrations
-* Text labels should annotate the visual, not replace it
-* Every scene should have motion — nothing static
-
-SCENE-SPECIFIC APPROACH: Based on the visual brief, use the most appropriate technique:
-* Science/physics: particle systems, wave animations, SVG geometry with CSS transforms
-* Data structures: animated SVG diagrams with elements inserting/finding/moving
-* Geography/civics: SVG maps or schematic layouts with animated highlights
-* Abstract concepts: metaphorical animations (flowing particles, growing trees, etc.)
+Technique by subject: physics/science → particles, waves, SVG geometry with CSS transforms; data structures → animated SVG nodes inserting/moving; geography/civics → schematic SVG layouts with highlights; abstract ideas → metaphorical motion (flowing particles, growing forms).
 
 Output ONLY the complete HTML document. No explanation, no markdown code fences. Start with <!DOCTYPE html> and end with </html>.`
 }
