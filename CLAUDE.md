@@ -1,4 +1,4 @@
-# Lesson Engine — Claude Context
+# Scrimba Lesson Engine — Claude Context
 
 ## What this app does
 Takes a natural-language educational query (e.g. "Why is the sky blue?") and generates a fully animated visual lesson that plays in the browser like a video — no MP4 files. Each lesson is a sequence of self-contained HTML/CSS/SVG scenes with synchronized AI-generated narration audio.
