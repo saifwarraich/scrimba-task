@@ -1,0 +1,14 @@
+{
+  "name": "lesson-engine",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "npx tsx watch --env-file=.env server/index.ts",
+    "dev:client": "cd client && npx vite"
+  },
+  "devDependencies": {
+    "concurrently": "^8.0.0",
+    "typescript": "^5.0.0",
+    "tsx": "^4.0.0"
+  }
+}
