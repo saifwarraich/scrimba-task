@@ -165,6 +165,39 @@ async function playAudioBuffer(buf: AudioBuffer): Promise<void> {
   })
 }
 
+// Safety net injected into every scene: hard-clips the root to the viewport, lets
+// grid/flex zones actually shrink (min-height:0), and auto-scales any scene whose
+// content is still taller/wider than the box so nothing bleeds behind the controls.
+const SCENE_GUARD = `<style id="__guard">
+  html, body { width:100% !important; height:100% !important; max-width:100vw !important; max-height:100vh !important; overflow:hidden !important; margin:0 !important; }
+  body > * , [class*="header"], [class*="visual"], [class*="caption"], [class*="side"], [class*="stage"], [class*="track"], [class*="left"], [class*="right"] { min-height:0; min-width:0; }
+  svg { max-width:100%; max-height:100%; }
+</style>
+<script>(function(){
+  function fit(){
+    var b = document.body; if(!b) return;
+    b.style.transform=''; b.style.width=''; b.style.height='';
+    var sh=b.scrollHeight, sw=b.scrollWidth, ih=window.innerHeight, iw=window.innerWidth;
+    var scale=Math.min(1, ih/sh, iw/sw);
+    if(scale<0.985){
+      scale=Math.max(scale,0.5);
+      b.style.transformOrigin='top left';
+      b.style.transform='scale('+scale+')';
+      b.style.width=(100/scale)+'vw';
+      b.style.height=(100/scale)+'vh';
+    }
+  }
+  window.addEventListener('load', function(){ fit(); setTimeout(fit,300); setTimeout(fit,900); });
+  window.addEventListener('resize', fit);
+})();</script>`
+
+// Insert the guard at the end of <body> (after the scene's own styles/scripts so
+// our reset wins and the fit pass measures the final layout).
+function prepareSceneHtml(html: string): string {
+  if (html.includes('</body>')) return html.replace('</body>', `${SCENE_GUARD}</body>`)
+  return html + SCENE_GUARD
+}
+
 // ── iFrame management ─────────────────────────────────────────────────────────
 function ensureIframe(index: number): HTMLIFrameElement {
   if (!iframes[index]) {
@@ -269,7 +302,7 @@ async function playScene(index: number) {
     setTimeout(resolve, 500)
   })
 
-  iframe.srcdoc = scene.html
+  iframe.srcdoc = prepareSceneHtml(scene.html)
 
   // Cross-fade
   if (prevIndex >= 0 && iframes[prevIndex]) {

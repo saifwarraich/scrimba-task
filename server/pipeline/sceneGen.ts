@@ -102,7 +102,14 @@ TEMPLATE "comparison" — header on top, two equal columns, caption at the botto
    Best for: A vs B, before/after, two contrasting ideas.
    body { display:grid; grid-template-rows: 16% 1fr 16%; grid-template-columns: 1fr 1fr;
           grid-template-areas: "header header" "left right" "caption caption"; }
-   Zones: .header, .left, .right, .caption`
+   Zones: .header, .left, .right, .caption
+
+TEMPLATE "quad-grid" — header on top, then a 2×2 grid of four equal cells.
+   Best for: recaps/summaries, four parts of a whole, an overview of prior scenes.
+   body { display:grid; grid-template-rows: 14% 1fr; grid-template-areas: "header" "grid"; }
+   .grid { grid-area:grid; display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap: var(--gap); }
+   Each of the four .cell elements lives inside .grid. Keep each cell's visual + tiny label SMALL so all four fit.
+   Zones: .header, .grid (containing four .cell)`
 
 function buildPrompt(query: string, scene: ScriptScene, total: number): string {
   return `You are generating one animated scene for an educational lesson player. The scene renders full-screen in a browser (1280×720 viewport).
@@ -135,16 +142,20 @@ Then add this required boilerplate so zones never overflow their boundaries:
 * { margin:0; padding:0; box-sizing:border-box; }
 html, body { width:100vw; height:100vh; overflow:hidden; }
 body { background: var(--bg-grad); color: var(--text); font-family: var(--font); }
-/* EVERY grid zone must clip its own contents: */
-.header, .visual, .caption, .side, .stage, .track, .left, .right {
+/* EVERY grid zone must clip its own contents AND be allowed to shrink: */
+.header, .visual, .caption, .side, .stage, .track, .left, .right, .grid, .cell {
   overflow: hidden; position: relative; padding: var(--pad);
+  min-height: 0; min-width: 0;   /* REQUIRED: without this, tall content pushes the grid past 100vh */
 }
 
 BOUNDARY RULES (critical — this is why we use templates):
-* All visuals and text live INSIDE a grid zone. Nothing is a direct child of <body> except the zone elements.
+* The whole scene MUST fit within 100vh × 100vw. The body grid is EXACTLY height:100vh. Size rows with fr/% (as given) — never let row heights sum to more than 100vh, and never use fixed px heights that could exceed the viewport.
+* min-height:0 / min-width:0 on every zone is mandatory — it is what lets overflow:hidden actually clip. Do not omit it.
+* All visuals and text live INSIDE a grid zone. Nothing is a direct child of <body> except the zone elements (and .grid's children are .cell elements).
 * SVGs must scale to their zone: <svg width="100%" height="100%" viewBox="..." preserveAspectRatio="xMidYMid meet">. Never give an SVG a fixed pixel size larger than its zone.
 * Do NOT use position:absolute to escape a zone. Absolutely-positioned children are fine ONLY relative to their zone (zones are position:relative) and must stay within it.
-* Headings/labels go in .header/.side/.caption. The main animated diagram goes in .visual/.stage/.track/.left/.right. Keep them separate — text must not overlap the diagram.
+* Headings/labels go in .header/.side/.caption. The main animated diagram goes in .visual/.stage/.track/.left/.right/.cell. Keep them separate — text must not overlap the diagram.
+* Reserve generous bottom margin in caption zones; the lesson player overlays a controls bar near the bottom of the screen, so keep essential content away from the extreme bottom edge.
 
 === STEP 3: TECHNICAL REQUIREMENTS ===
 * Full HTML document with <!DOCTYPE html>, <html>, <head>, <body>
