@@ -1,5 +1,5 @@
 {
-  "name": "lesson-engine-server",
+  "name": "scrimba-lesson-engine-server",
   "type": "module",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

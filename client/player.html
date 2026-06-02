@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lesson Engine — Player</title>
+  <title>Scrimba Lesson Engine — Player</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -88,6 +88,21 @@
       transition: border-color 150ms, color 150ms;
     }
     #newLessonBtn:hover { border-color: var(--accent-purple); color: var(--text-primary); }
+
+    #downloadBtn {
+      flex-shrink: 0;
+      padding: 6px 14px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: border-color 150ms, color 150ms, opacity 150ms;
+    }
+    #downloadBtn:hover:not(:disabled) { border-color: var(--accent-purple); color: var(--text-primary); }
+    #downloadBtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
     #reconnectBtn {
       display: none;
@@ -317,10 +332,11 @@
   <div id="topbar">
     <a href="/" class="logo">
       <span class="logo-icon">◈</span>
-      <span class="logo-text">Lesson Engine</span>
+      <span class="logo-text">Scrimba Lesson Engine</span>
     </a>
     <div id="queryDisplay"></div>
     <button id="reconnectBtn">↺ Reconnect</button>
+    <button id="downloadBtn" data-tooltip="Available when the lesson finishes">↓ Save</button>
     <button id="newLessonBtn" onclick="location.href='/'">New lesson</button>
   </div>
 

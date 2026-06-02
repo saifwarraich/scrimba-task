@@ -1,5 +1,5 @@
 {
-  "name": "lesson-engine-client",
+  "name": "scrimba-lesson-engine-client",
   "type": "module",
   "scripts": {
     "dev": "vite",
