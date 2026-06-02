@@ -27,6 +27,7 @@ const sceneCounter = document.getElementById('sceneCounter')!
 const timeDisplay = document.getElementById('timeDisplay')!
 const queryDisplay = document.getElementById('queryDisplay')!
 const reconnectBtn = document.getElementById('reconnectBtn') as HTMLButtonElement
+const downloadBtn = document.getElementById('downloadBtn') as HTMLButtonElement
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const params = new URLSearchParams(location.search)
@@ -603,6 +604,8 @@ function connectSSE() {
   sse.addEventListener('done', () => {
     allDone = true
     skipEndBtn.disabled = false
+    downloadBtn.disabled = false
+    downloadBtn.dataset.tooltip = 'Download a standalone file you can play offline'
     updateControls()
     sse.close()
   })
@@ -631,6 +634,34 @@ prevBtn.addEventListener('click', () => seek(currentIndex - 1))
 nextBtn.addEventListener('click', () => seek(currentIndex + 1))
 restartBtn.addEventListener('click', () => seek(0))
 skipEndBtn.addEventListener('click', () => seek(totalScenes - 1))
+
+// Download the finished lesson as a self-contained, offline-playable HTML file.
+downloadBtn.disabled = true
+downloadBtn.addEventListener('click', async () => {
+  if (downloadBtn.disabled) return
+  const original = downloadBtn.textContent
+  downloadBtn.disabled = true
+  downloadBtn.textContent = '↓ Preparing…'
+  try {
+    const res = await fetch(`http://localhost:3000/api/lesson/${lessonId}/export`)
+    if (!res.ok) throw new Error(`Export failed (${res.status})`)
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    // Server sets the real filename via Content-Disposition; this is a fallback.
+    a.download = `lesson-${query.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.html`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    alert(`Could not download lesson: ${String(err)}`)
+  } finally {
+    downloadBtn.textContent = original
+    downloadBtn.disabled = false
+  }
+})
 
 document.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return

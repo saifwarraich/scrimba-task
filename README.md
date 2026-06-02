@@ -54,6 +54,12 @@ npm run dev:client   # frontend only
 
 Open **http://localhost:5173**, enter a question, and watch the lesson.
 
+## Download a standalone lesson
+
+Once a lesson finishes generating, the **↓ Save** button in the player topbar saves it as a single, self-contained `.html` file. Every scene, the narration audio (embedded as base64), and a copy of the player engine are baked into that one file — so it plays in any browser by just opening it, with **no server, no API keys, and no network**. Narration stays perfectly synced because the embedded player uses the same "audio is the clock" logic as the live player.
+
+Because browsers block audio until a user interacts with the page, the standalone file opens on a **"Play lesson"** click-to-start screen; after that one click it plays through with sound, and supports the same pause, seek, and keyboard controls. This is how the shareable example lessons are produced.
+
 ## Demo queries to try
 
 - Why is the sky blue?
@@ -62,4 +68,4 @@ Open **http://localhost:5173**, enter a question, and watch the lesson.
 
 ## Architecture
 
-The landing page POSTs a query to the Fastify backend (`server/`), which immediately returns a `lessonId` and kicks off an async pipeline: Claude generates a 5–8 scene storyboard (`scriptGen.ts`), then generates self-contained animated HTML for each scene in parallel with up to 3 concurrent Claude calls (`sceneGen.ts`), while ElevenLabs synthesizes narration audio per scene (`tts.ts`). Completed scenes are streamed to the browser via Server-Sent Events as they finish. The vanilla-TS player (`client/src/player.ts`) renders each scene in a sandboxed iframe and synchronizes audio playback and a visual track timeline, allowing pause, seek, and keyboard navigation (Space / ← → / R).
+The landing page POSTs a query to the Fastify backend (`server/`), which immediately returns a `lessonId` and kicks off an async pipeline: Claude generates a 5–8 scene storyboard (`scriptGen.ts`), then generates self-contained animated HTML for each scene in parallel with up to 3 concurrent Claude calls (`sceneGen.ts`), while ElevenLabs synthesizes narration audio per scene (`tts.ts`). Completed scenes are streamed to the browser via Server-Sent Events as they finish. The vanilla-TS player (`client/src/player.ts`) renders each scene in a sandboxed iframe and synchronizes audio playback and a visual track timeline, allowing pause, seek, and keyboard navigation (Space / ← → / R). A finished lesson can be exported to a single self-contained HTML file via `GET /api/lesson/:id/export` (`server/export.ts`), which inlines every scene, its base64 audio, and a standalone port of the player engine (`server/standalone/`) so the lesson plays offline with no backend.

@@ -3,6 +3,7 @@ import cors from '@fastify/cors'
 import { generateScript } from './pipeline/scriptGen.js'
 import { generateAllScenes } from './pipeline/sceneGen.js'
 import { generateAudio } from './pipeline/tts.js'
+import { buildStandaloneHtml, exportFilename } from './export.js'
 import type { ScriptScene } from './pipeline/scriptGen.js'
 
 interface GeneratedScene {
@@ -161,6 +162,28 @@ app.get('/api/lesson/:id/stream', async (req, reply) => {
   await new Promise<void>((resolve) => {
     req.raw.on('close', resolve)
   })
+})
+
+// Download a fully self-contained single-file HTML version of a finished lesson.
+// Only available once generation is complete, since a standalone file needs every
+// scene and its audio baked in.
+app.get('/api/lesson/:id/export', async (req, reply) => {
+  const { id } = req.params as { id: string }
+  const lesson = lessons.get(id)
+
+  if (!lesson) {
+    return reply.status(404).send({ error: 'Lesson not found' })
+  }
+  if (lesson.status !== 'done') {
+    return reply.status(409).send({ error: 'Lesson is not finished generating yet' })
+  }
+
+  const html = buildStandaloneHtml({ query: lesson.query, scenes: lesson.scenes })
+
+  return reply
+    .header('Content-Type', 'text/html; charset=utf-8')
+    .header('Content-Disposition', `attachment; filename="${exportFilename(lesson.query)}"`)
+    .send(html)
 })
 
 const port = Number(process.env.PORT) || 3000

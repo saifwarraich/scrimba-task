@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scrimba Lesson</title>
+  <style>
+    :root {
+      --bg-page:    #0d1117;
+      --bg-card:    #161b22;
+      --bg-input:   #1e2530;
+      --border:     #2d3748;
+      --border-sub: #1e2530;
+      --text-primary:   #e6edf3;
+      --text-secondary: #8b949e;
+      --text-dim:       #484f58;
+      --accent-purple: #6c4ff6;
+      --accent-purple-hover: #7c5ff8;
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg-page);
+      color: var(--text-primary);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #topbar {
+      height: 48px;
+      min-height: 48px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border-sub);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 12px;
+      z-index: 10;
+    }
+    .logo { display: flex; align-items: center; gap: 6px; color: var(--text-primary); flex-shrink: 0; }
+    .logo-icon { color: var(--accent-purple); font-size: 18px; }
+    .logo-text { font-size: 14px; font-weight: 500; }
+    #queryDisplay {
+      flex: 1; text-align: center; color: var(--text-secondary); font-size: 14px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 500px; margin: 0 auto;
+    }
+
+    #viewport {
+      flex: 1; position: relative; background: #000; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* 16:9 letterbox — scenes render at the ratio Claude targets */
+    #sceneBox {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      width: min(100%, calc(100vh * 16 / 9));
+      max-height: 100%;
+      background: var(--bg-page);
+      overflow: hidden;
+    }
+    #sceneBox iframe {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      border: none; opacity: 0; transition: opacity 400ms ease;
+    }
+
+    /* Click-to-start overlay — required because browsers block audio until a gesture */
+    #startOverlay {
+      position: absolute; inset: 0; z-index: 5;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg-page); cursor: pointer;
+    }
+    .start-card { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+    .start-play {
+      width: 72px; height: 72px; border-radius: 50%;
+      background: var(--accent-purple); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px; padding-left: 4px;
+      transition: background 150ms, transform 100ms;
+    }
+    #startOverlay:hover .start-play { background: var(--accent-purple-hover); }
+    #startOverlay:active .start-play { transform: scale(0.94); }
+    .start-title { font-size: 18px; font-weight: 600; }
+    .start-sub { font-size: 13px; color: var(--text-secondary); }
+
+    #controls {
+      height: 72px; min-height: 72px;
+      background: var(--bg-card); border-top: 1px solid var(--border);
+      display: flex; flex-direction: column; padding: 0 16px;
+    }
+    #track { display: flex; gap: 4px; align-items: center; padding: 10px 0 6px; height: 29px; }
+    .track-segment {
+      flex: 1; height: 3px; border-radius: 2px; background: var(--border);
+      cursor: pointer; position: relative; overflow: hidden;
+    }
+    .track-segment.played { background: rgba(230, 237, 243, 0.4); }
+    .track-segment.active { background: rgba(230, 237, 243, 0.2); }
+    .track-segment.pending { background: var(--border); }
+    .track-fill {
+      position: absolute; top: 0; left: 0; bottom: 0; width: 0%;
+      background: white; border-radius: 2px; transition: width linear;
+    }
+
+    #btnRow { display: flex; align-items: center; height: 43px; gap: 0; }
+    .ctrl-btn {
+      background: transparent; border: none; color: var(--text-secondary);
+      font-size: 16px; cursor: pointer; padding: 6px 10px; border-radius: var(--radius-sm);
+      transition: color 150ms, background 150ms; font-family: var(--font-sans); line-height: 1;
+    }
+    .ctrl-btn:hover { color: var(--text-primary); background: var(--bg-input); }
+    .ctrl-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .ctrl-btn:disabled:hover { color: var(--text-secondary); background: transparent; }
+    #playPauseBtn {
+      width: 40px; height: 40px; border-radius: 50%; background: var(--accent-purple);
+      color: white; font-size: 14px; display: flex; align-items: center; justify-content: center;
+      padding: 0; margin: 0 6px; transition: background 150ms, transform 100ms;
+    }
+    #playPauseBtn:hover { background: var(--accent-purple-hover); color: white; }
+    #playPauseBtn:active { transform: scale(0.94); }
+    .spacer { flex: 1; }
+    #sceneCounter { font-size: 13px; color: var(--text-secondary); margin-right: 12px; }
+    #timeDisplay { font-size: 13px; color: var(--text-dim); font-family: var(--font-mono); }
+  </style>
+</head>
+<body>
+  <div id="topbar">
+    <div class="logo">
+      <span class="logo-icon">◈</span>
+      <span class="logo-text">Scrimba Lesson Engine</span>
+    </div>
+    <div id="queryDisplay"></div>
+  </div>
+
+  <div id="viewport">
+    <div id="sceneBox">
+      <div id="startOverlay">
+        <div class="start-card">
+          <div class="start-play">▶</div>
+          <div class="start-title">Play lesson</div>
+          <div class="start-sub">Click to start — with narration</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="controls">
+    <div id="track"></div>
+    <div id="btnRow">
+      <button class="ctrl-btn" id="restartBtn" title="Restart">⟨⟨</button>
+      <button class="ctrl-btn" id="prevBtn" title="Previous">◀</button>
+      <button class="ctrl-btn" id="playPauseBtn" title="Play/Pause">▶</button>
+      <button class="ctrl-btn" id="nextBtn" title="Next">▶</button>
+      <button class="ctrl-btn" id="skipEndBtn" title="Skip to end">▶▶</button>
+      <div class="spacer"></div>
+      <span id="sceneCounter">—</span>
+      <span id="timeDisplay">0:00</span>
+    </div>
+  </div>
+
+  <script>/*__LESSON_DATA__*/</script>
+  <script>/*__PLAYER_JS__*/</script>
+</body>
+</html>

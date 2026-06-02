@@ -89,6 +89,21 @@
     }
     #newLessonBtn:hover { border-color: var(--accent-purple); color: var(--text-primary); }
 
+    #downloadBtn {
+      flex-shrink: 0;
+      padding: 6px 14px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: border-color 150ms, color 150ms, opacity 150ms;
+    }
+    #downloadBtn:hover:not(:disabled) { border-color: var(--accent-purple); color: var(--text-primary); }
+    #downloadBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
     #reconnectBtn {
       display: none;
       flex-shrink: 0;
@@ -321,6 +336,7 @@
     </a>
     <div id="queryDisplay"></div>
     <button id="reconnectBtn">↺ Reconnect</button>
+    <button id="downloadBtn" data-tooltip="Available when the lesson finishes">↓ Save</button>
     <button id="newLessonBtn" onclick="location.href='/'">New lesson</button>
   </div>
 
