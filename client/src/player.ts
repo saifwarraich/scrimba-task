@@ -42,6 +42,7 @@ let allDone = false
 
 let currentIndex = -1
 let playing = false
+let waitingForNext = false  // true when audio ended but next scene not generated yet
 let sceneTimer: ReturnType<typeof setTimeout> | null = null
 let sceneTimerStart = 0
 let sceneTimerDuration = 0
@@ -191,11 +192,113 @@ const SCENE_GUARD = `<style id="__guard">
   window.addEventListener('resize', fit);
 })();</script>`
 
-// Insert the guard at the end of <body> (after the scene's own styles/scripts so
-// our reset wins and the fit pass measures the final layout).
+// Pausable timing controller, injected at the TOP of every scene (before the
+// scene's own scripts run) so it can intercept their rAF/timer/animation calls.
+// The scene iframe is sandboxed (cross-origin), so the parent cannot reach in to
+// pause it directly — instead the parent posts {__lessonCtrl:'pause'|'resume'}
+// and this controller freezes/thaws all animation from the inside.
+const SCENE_TIMING_CONTROL = `<script>(function(){
+  var paused = false;
+  // ---- requestAnimationFrame ----
+  var realRAF = window.requestAnimationFrame.bind(window);
+  var realCAF = window.cancelAnimationFrame ? window.cancelAnimationFrame.bind(window) : function(){};
+  var rafQueued = [];      // callbacks deferred while paused
+  var rafReal = {};        // our id -> real raf id (currently scheduled)
+  var rafSeq = 1;
+  window.requestAnimationFrame = function(cb){
+    var id = rafSeq++;
+    if (paused) { rafQueued.push({ id:id, cb:cb }); }
+    else { rafReal[id] = realRAF(function(ts){ delete rafReal[id]; cb(ts); }); }
+    return id;
+  };
+  window.cancelAnimationFrame = function(id){
+    if (rafReal[id] != null) { realCAF(rafReal[id]); delete rafReal[id]; }
+    rafQueued = rafQueued.filter(function(r){ return r.id !== id; });
+  };
+  function flushRAF(){
+    var q = rafQueued; rafQueued = [];
+    q.forEach(function(r){ rafReal[r.id] = realRAF(function(ts){ delete rafReal[r.id]; r.cb(ts); }); });
+  }
+  // ---- setTimeout / setInterval ----
+  var realST = window.setTimeout.bind(window);
+  var realCT = window.clearTimeout.bind(window);
+  var realSI = window.setInterval.bind(window);
+  var realCI = window.clearInterval.bind(window);
+  var timers = {};
+  var tSeq = 1;
+  function schedule(rec){
+    rec.start = Date.now();
+    if (rec.kind === 'interval') {
+      rec.realId = realSI(function(){ rec.start = Date.now(); rec.fn.apply(null, rec.args); }, rec.delay);
+    } else {
+      rec.realId = realST(function(){ delete timers[rec.id]; rec.fn.apply(null, rec.args); }, rec.remaining);
+    }
+  }
+  window.setTimeout = function(fn, delay){
+    var args = Array.prototype.slice.call(arguments, 2);
+    var id = tSeq++;
+    var rec = { id:id, kind:'timeout', fn:fn, delay:delay||0, remaining:delay||0, args:args, realId:null };
+    timers[id] = rec;
+    if (!paused) schedule(rec);
+    return id;
+  };
+  window.clearTimeout = function(id){
+    var rec = timers[id];
+    if (rec) { if (rec.realId != null) realCT(rec.realId); delete timers[id]; }
+    else realCT(id);
+  };
+  window.setInterval = function(fn, delay){
+    var args = Array.prototype.slice.call(arguments, 2);
+    var id = tSeq++;
+    var rec = { id:id, kind:'interval', fn:fn, delay:delay||0, remaining:delay||0, args:args, realId:null };
+    timers[id] = rec;
+    if (!paused) schedule(rec);
+    return id;
+  };
+  window.clearInterval = function(id){
+    var rec = timers[id];
+    if (rec) { if (rec.realId != null) realCI(rec.realId); delete timers[id]; }
+    else realCI(id);
+  };
+  function pauseTimers(){
+    Object.keys(timers).forEach(function(k){
+      var rec = timers[k];
+      if (rec.realId == null) return;
+      if (rec.kind === 'interval') { realCI(rec.realId); rec.realId = null; }
+      else { realCT(rec.realId); rec.realId = null; rec.remaining = Math.max(0, rec.remaining - (Date.now() - rec.start)); }
+    });
+  }
+  function resumeTimers(){ Object.keys(timers).forEach(function(k){ schedule(timers[k]); }); }
+  // ---- CSS / Web Animations ----
+  function pauseAnims(){ try { document.getAnimations().forEach(function(a){ a.pause(); }); } catch(e){} }
+  function resumeAnims(){ try { document.getAnimations().forEach(function(a){ a.play(); }); } catch(e){} }
+  // ---- control ----
+  function doPause(){ if (paused) return; paused = true; pauseTimers(); pauseAnims(); }
+  function doResume(){ if (!paused) return; paused = false; resumeTimers(); flushRAF(); resumeAnims(); }
+  window.addEventListener('message', function(e){
+    var d = e && e.data;
+    if (!d || typeof d !== 'object') return;
+    if (d.__lessonCtrl === 'pause') doPause();
+    else if (d.__lessonCtrl === 'resume') doResume();
+  });
+})();<\/script>`
+
+// Inject the timing controller as early as possible (before scene scripts), and
+// the visual guard at the end of <body> (after the scene's own styles so our
+// reset wins and the fit pass measures the final layout).
 function prepareSceneHtml(html: string): string {
-  if (html.includes('</body>')) return html.replace('</body>', `${SCENE_GUARD}</body>`)
-  return html + SCENE_GUARD
+  let out = html
+  if (out.includes('<head>')) out = out.replace('<head>', `<head>${SCENE_TIMING_CONTROL}`)
+  else if (/<html[^>]*>/.test(out)) out = out.replace(/(<html[^>]*>)/, `$1${SCENE_TIMING_CONTROL}`)
+  else out = SCENE_TIMING_CONTROL + out
+
+  if (out.includes('</body>')) out = out.replace('</body>', `${SCENE_GUARD}</body>`)
+  else out = out + SCENE_GUARD
+  return out
+}
+
+function postToIframe(index: number, cmd: 'pause' | 'resume') {
+  try { iframes[index]?.contentWindow?.postMessage({ __lessonCtrl: cmd }, '*') } catch {}
 }
 
 // ── iFrame management ─────────────────────────────────────────────────────────
@@ -235,10 +338,13 @@ function elapsedToScene(idx: number): number {
 function updateTimeDisplay() {
   if (!scriptScenes.length) return
   let elapsed = elapsedToScene(currentIndex)
-  if (currentIndex >= 0 && playing && audioCtx.state === 'running') {
-    const remaining = sceneTimerRemaining > 0 ? sceneTimerRemaining : (scriptScenes[currentIndex]?.durationSeconds || 0)
-    const sceneDur = scriptScenes[currentIndex]?.durationSeconds || 0
-    elapsed += (sceneDur - remaining)
+  if (currentIndex >= 0 && playing) {
+    if (currentAudioSource && audioDuration > 0) {
+      // Live position from the audio clock — keeps the readout synced to narration.
+      elapsed += Math.min(audioDuration, Math.max(0, audioCtx.currentTime - audioStartTime))
+    } else {
+      elapsed += Math.max(0, (sceneTimerDuration - sceneTimerRemaining) / 1000)
+    }
   }
   timeDisplay.textContent = `${fmt(elapsed)} / ~${fmt(totalEstimatedDuration())}`
 }
@@ -272,11 +378,42 @@ function updateControls() {
 }
 
 // ── Core playback ─────────────────────────────────────────────────────────────
+
+// Single place that decides what happens when a scene's narration ends.
+// Only advances when the next scene is actually generated; otherwise it parks on
+// the current (finished) scene and waits — onSceneArrived() resumes the flow.
+function advance(fromIndex: number) {
+  if (currentIndex !== fromIndex || !playing) return
+  if (sceneTimer) { clearTimeout(sceneTimer); sceneTimer = null }
+  stopCurrentAudio()
+  updateSegmentState(fromIndex, 'played')
+
+  const next = fromIndex + 1
+  if (next >= totalScenes) {
+    playing = false
+    waitingForNext = false
+    updateControls()
+    return
+  }
+  if (generatedScenes[next]) {
+    playScene(next)
+  } else {
+    // Next scene still generating — hold here (frozen on the last frame) until it
+    // arrives rather than jumping to a blank/unready scene.
+    playing = false
+    waitingForNext = true
+    postToIframe(fromIndex, 'pause')
+    updateControls()
+  }
+}
+
 async function playScene(index: number) {
   const scene = generatedScenes[index]
   if (!scene) return
 
   stopCurrentAudio()
+  audioBuffer = null
+  waitingForNext = false
   if (sceneTimer) { clearTimeout(sceneTimer); sceneTimer = null }
 
   // Update track segments
@@ -294,6 +431,9 @@ async function playScene(index: number) {
   // Always reload the iframe so animations restart from the beginning
   const iframe = ensureIframe(index)
 
+  // Decode audio in parallel with the iframe load so we can sync to its real length
+  const decodePromise = scene.audioBase64 ? decodeAudio(scene.audioBase64) : Promise.resolve(null)
+
   // Wait for iframe load before showing (avoids blank flash on scene 0)
   const loadPromise = new Promise<void>(resolve => {
     const onLoad = () => { iframe.removeEventListener('load', onLoad); resolve() }
@@ -309,64 +449,33 @@ async function playScene(index: number) {
     iframes[prevIndex].style.opacity = '0'
   }
   await loadPromise
+  if (currentIndex !== index || !playing) return  // navigated away during load
   iframe.style.opacity = '1'
 
-  const estimatedDur = scene.durationSeconds * 1000
-  startTrackFill(index, estimatedDur)
+  const buf = await decodePromise
+  if (currentIndex !== index || !playing) return  // navigated away during decode
 
-  sceneTimerDuration = estimatedDur
-  sceneTimerRemaining = estimatedDur
-  sceneTimerStart = Date.now()
-
-  function scheduleAdvance(ms: number) {
-    if (sceneTimer) clearTimeout(sceneTimer)
-    sceneTimerDuration = ms
-    sceneTimerRemaining = ms
+  if (buf) {
+    // Audio drives everything: the scene plays exactly as long as the narration.
+    const durMs = buf.duration * 1000
+    startTrackFill(index, durMs)
+    sceneTimerDuration = durMs
+    sceneTimerRemaining = durMs
     sceneTimerStart = Date.now()
-    sceneTimer = setTimeout(() => {
-      if (currentIndex === index && playing) {
-        const next = index + 1
-        if (next < totalScenes && generatedScenes[next]) {
-          playScene(next)
-        } else if (next >= totalScenes) {
-          playing = false
-          updateControls()
-          updateSegmentState(index, 'played')
-        } else {
-          playing = false
-          updateControls()
-        }
-      }
-    }, ms)
-  }
 
-  scheduleAdvance(estimatedDur)
+    playAudioBuffer(buf).then(() => advance(index)).catch(() => {})
 
-  // Decode audio, sync timer to actual duration, then advance when audio ends
-  if (scene.audioBase64) {
-    decodeAudio(scene.audioBase64).then((buf) => {
-      if (!buf || currentIndex !== index || !playing) return
-      const actualDur = Math.ceil(buf.duration * 1000) + 300
-      startTrackFill(index, actualDur)
-      scheduleAdvance(actualDur)
-      playAudioBuffer(buf).then(() => {
-        // Audio finished — advance immediately if still on this scene
-        if (currentIndex === index && playing) {
-          if (sceneTimer) { clearTimeout(sceneTimer); sceneTimer = null }
-          const next = index + 1
-          if (next < totalScenes && generatedScenes[next]) {
-            playScene(next)
-          } else if (next >= totalScenes) {
-            playing = false
-            updateControls()
-            updateSegmentState(index, 'played')
-          } else {
-            playing = false
-            updateControls()
-          }
-        }
-      }).catch(() => {})
-    })
+    // Safety net: if `onended` never fires (some browsers/edge cases), advance a
+    // bit after the known duration so playback can't hang.
+    sceneTimer = setTimeout(() => advance(index), durMs + 800)
+  } else {
+    // No audio for this scene — fall back to the script's estimated duration.
+    const durMs = scene.durationSeconds * 1000
+    startTrackFill(index, durMs)
+    sceneTimerDuration = durMs
+    sceneTimerRemaining = durMs
+    sceneTimerStart = Date.now()
+    sceneTimer = setTimeout(() => advance(index), durMs)
   }
 
   updateControls()
@@ -382,11 +491,8 @@ function pause() {
   sceneTimerRemaining = Math.max(0, sceneTimerDuration - elapsed)
   if (sceneTimer) { clearTimeout(sceneTimer); sceneTimer = null }
 
-  // Pause CSS animations in iframe
-  try {
-    const doc = iframes[currentIndex]?.contentDocument
-    if (doc) doc.getAnimations?.()?.forEach((a) => a.pause())
-  } catch {}
+  // Freeze the scene's animations/timers from inside the sandboxed iframe.
+  postToIframe(currentIndex, 'pause')
 
   updateControls()
 }
@@ -396,63 +502,40 @@ function resume() {
   const scene = generatedScenes[currentIndex]
   if (!scene) return
 
+  const idx = currentIndex
   playing = true
 
-  // Resume iframe animations
-  try {
-    const doc = iframes[currentIndex]?.contentDocument
-    if (doc) doc.getAnimations?.()?.forEach((a) => a.play())
-  } catch {}
+  // Thaw the scene's animations/timers
+  postToIframe(idx, 'resume')
 
-  // Resume audio from position
+  // Resume audio from where it left off; audio end remains the advance trigger.
   if (scene.audioBase64 && audioBuffer) {
-    const offset = audioDuration - (sceneTimerRemaining / 1000)
+    const offset = Math.max(0, audioDuration - (sceneTimerRemaining / 1000))
     if (offset < audioDuration) {
       if (audioCtx.state === 'suspended') audioCtx.resume()
       const source = audioCtx.createBufferSource()
       source.buffer = audioBuffer
       source.connect(audioCtx.destination)
-      source.start(0, Math.max(0, offset))
+      source.onended = () => advance(idx)
+      source.start(0, offset)
       currentAudioSource = source
       audioStartTime = audioCtx.currentTime - offset
     }
-  } else if (scene.audioBase64) {
-    decodeAudio(scene.audioBase64).then((buf) => {
-      if (buf && currentIndex === currentIndex && playing) {
-        const offset = audioDuration - (sceneTimerRemaining / 1000)
-        playAudioBuffer(buf).catch(() => {})
-      }
-    })
   }
 
-  // Restart track fill for remaining duration
-  const seg = getSegment(currentIndex)
+  // Restart track fill for the remaining duration
+  const seg = getSegment(idx)
   if (seg) {
     const fill = seg.querySelector('.track-fill') as HTMLElement
     if (fill) {
-      const currentPct = parseFloat(fill.style.width) || 0
-      const remainPct = 100 - currentPct
       fill.style.transition = `width ${sceneTimerRemaining}ms linear`
       fill.style.width = '100%'
     }
   }
 
   sceneTimerStart = Date.now()
-  sceneTimer = setTimeout(() => {
-    if (playing && currentIndex === currentIndex) {
-      const next = currentIndex + 1
-      if (next < totalScenes && generatedScenes[next]) {
-        playScene(next)
-      } else if (next >= totalScenes) {
-        playing = false
-        updateControls()
-        updateSegmentState(currentIndex, 'played')
-      } else {
-        playing = false
-        updateControls()
-      }
-    }
-  }, sceneTimerRemaining)
+  // Safety net only; the audio `onended` above is the real advance trigger.
+  sceneTimer = setTimeout(() => advance(idx), sceneTimerRemaining + (scene.audioBase64 && audioBuffer ? 800 : 0))
 
   updateControls()
 }
@@ -490,9 +573,10 @@ function onSceneArrived(scene: GeneratedScene) {
     return
   }
 
-  // If player was stalled waiting for this scene, resume
-  if (!playing && currentIndex >= 0 && scene.index === currentIndex + 1) {
-    // auto-advance
+  // If playback parked waiting for this exact next scene, continue now.
+  // (Only when we were auto-waiting — not when the user manually paused.)
+  if (waitingForNext && currentIndex >= 0 && scene.index === currentIndex + 1) {
+    waitingForNext = false
     playScene(scene.index)
   }
 
@@ -523,7 +607,7 @@ function connectSSE() {
     sse.close()
   })
 
-  sse.addEventListener('error', (e: any) => {
+  sse.addEventListener('error', () => {
     if (sse.readyState === EventSource.CLOSED) {
       reconnectBtn.style.display = 'block'
     }
