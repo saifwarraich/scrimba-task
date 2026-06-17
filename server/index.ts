@@ -1,5 +1,8 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
+import fastifyStatic from '@fastify/static'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { generateScript } from './pipeline/scriptGen.js'
 import { generateAllScenes } from './pipeline/sceneGen.js'
 import { generateAudio } from './pipeline/tts.js'
@@ -90,6 +93,15 @@ await app.register(cors, {
   origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
 })
 
+// Serve the built frontend (client/dist) so the app runs as a single service
+// in production. In local dev the client is served by Vite instead; the dist
+// folder simply won't exist, which is fine — these routes are only hit in prod.
+const clientDist = join(dirname(fileURLToPath(import.meta.url)), '..', 'client', 'dist')
+await app.register(fastifyStatic, {
+  root: clientDist,
+  wildcard: false,
+})
+
 app.post('/api/generate', async (req, reply) => {
   const { query } = req.body as { query: string }
   if (!query?.trim()) {
@@ -123,7 +135,10 @@ app.get('/api/lesson/:id/stream', async (req, reply) => {
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive',
     'X-Accel-Buffering': 'no',
-    'Access-Control-Allow-Origin': 'http://localhost:5173',
+    // Client is served same-origin in production and proxied in dev, so CORS
+    // isn't needed; reflect the origin if present to stay permissive for any
+    // direct cross-origin testing.
+    'Access-Control-Allow-Origin': (req.headers.origin as string) || '*',
   })
 
   const client: SSEClient = { reply, closed: false }

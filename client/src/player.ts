@@ -586,7 +586,7 @@ function onSceneArrived(scene: GeneratedScene) {
 
 // ── SSE connection ────────────────────────────────────────────────────────────
 function connectSSE() {
-  const sse = new EventSource(`http://localhost:3000/api/lesson/${lessonId}/stream`)
+  const sse = new EventSource(`/api/lesson/${lessonId}/stream`)
 
   sse.addEventListener('script_ready', (e) => {
     const data = JSON.parse(e.data)
@@ -643,7 +643,7 @@ downloadBtn.addEventListener('click', async () => {
   downloadBtn.disabled = true
   downloadBtn.textContent = '↓ Preparing…'
   try {
-    const res = await fetch(`http://localhost:3000/api/lesson/${lessonId}/export`)
+    const res = await fetch(`/api/lesson/${lessonId}/export`)
     if (!res.ok) throw new Error(`Export failed (${res.status})`)
     const blob = await res.blob()
     const url = URL.createObjectURL(blob)
